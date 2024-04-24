@@ -25,14 +25,11 @@ import static uk.ac.bris.cs.scotlandyard.model.Piece.MrX.MRX;
 public class MyAi implements Ai {
 	private  GameSetup setup = null;
 	private ImmutableValueGraph<Integer, ImmutableSet<ScotlandYard.Transport>> gameMap;
-	private int size;
 	private  Board.GameState gameState;
 	private  Player mrX;
 	private  ImmutableList<Player> detectives;
-	private  Board currentBoard;
-	private  Board.TicketBoard tb;
-	private  Set<Integer> CurrentPosition = new HashSet<>();
-	private  int GameCount = 1;
+	private  Set<Integer> CurrentPosition = new HashSet<>();			// detectives current position
+	private  int GameCount = 1;					// count round of the game
 
 
     @Nonnull @Override public String name() { return "R2D2"; }
@@ -40,12 +37,10 @@ public class MyAi implements Ai {
 	@Nonnull @Override public Move pickMove(
 			@Nonnull Board board,
 			Pair<Long, TimeUnit> timeoutPair) {
-		//Creat a new Game State at the start of the game
-		if (GameCount == 1)
-		{
-			newGamestate(board);
-		}
-		CurrentPosition = new HashSet<>();
+		//Creat a new Game State if game just start
+		if (GameCount == 1) newGamestate(board);
+
+		CurrentPosition = new HashSet<>();			// get positions from game state
 		for (Piece p : board.getPlayers())
 		{
 			if (p.isDetective())
@@ -53,18 +48,25 @@ public class MyAi implements Ai {
 				CurrentPosition.add(board.getDetectiveLocation((Detective) p).get());
 			}
 		}
-		System.out.println(CurrentPosition);
+//		System.out.println(CurrentPosition);
 		var availableMoves = board.getAvailableMoves();
-		System.out.println(availableMoves.size());
-		System.out.println(availableMoves);
-		// get the available move from board
+//		System.out.println(availableMoves.size());
+//		System.out.println(availableMoves);
+
+		// create a map
 		MutableValueGraph<Integer,Integer> safemap = CreateMap();
+
 		// update the map
 		safemap = updateMap(safemap);
+
+		/*
+		* check that Mr X will not be catch in next 2 rounds, which call it "safe"
+		* in that situation, Mr X will only use single move without using any special tickets (double, secret)
+		*/
 		List<Move> singleMove = new ArrayList<>();
 		for (Move move : availableMoves)
 		{
-			Boolean IsSecret = false;
+			boolean IsSecret = false;				// can Mr X be seen
 			for (ScotlandYard.Ticket ticket:move.tickets())
 			{
                 if (ticket == ScotlandYard.Ticket.SECRET)
@@ -77,29 +79,34 @@ public class MyAi implements Ai {
 			{
 				continue;
 			}
-			if (move instanceof  Move.SingleMove )
+			if (move instanceof Move.SingleMove)
 			{
 				singleMove.add(move);
 			}
 		}
-		Boolean Two = IsDetectiveNearby(CurrentPosition);
-		System.out.println(Two);
+
+		// Mr X can be catch in 2 rounds
+		boolean Two = IsDetectiveNearby(CurrentPosition);
+//		System.out.println(Two);
 		var bestMove = singleMove.get(new Random().nextInt(singleMove.size()));
 		boolean PositiondetectiveCannotReach = CheckFutrueweight(availableMoves , safemap);
 		System.out.println("Can't Reach" +PositiondetectiveCannotReach);
+		// dijkstra algorithm applied
+		int [] Score = updatedijkstra(safemap);
 		if (Two && PositiondetectiveCannotReach)
 		{
 			System.out.println("Detective Nearby but can find way out");
-			bestMove = ChoosePositionwhiledetectiveCannotReach(availableMoves , safemap);
+			bestMove = ChoosePositionwhiledetectiveCannotReach(availableMoves , safemap);			// find 0
 		}else if (Two){
 			System.out.println("Detective Can reach Mrx within 2 rounds ");
-			int [] Score = updatedijsktra(safemap);
-			bestMove = ChooseMoveWhileDetectiveNearBy(availableMoves,Score);
+			bestMove = ChooseMoveWhileDetectiveNearBy(availableMoves,Score);						// find best weight
 		}
-		System.out.println(bestMove);
+//		System.out.println(bestMove);
 		GameCount++;
 		return bestMove;
 	}
+
+	// arrived by 2 rounds
 	public boolean IsDetectiveNearby (Set<Integer> CurrentPosition)
 	{
 		// To justify whether detective will arrive in next 2 round
@@ -126,6 +133,8 @@ public class MyAi implements Ai {
 		}
 		return Nearby;
 	}
+
+	// (if exist) 0 with both single and double moves, return boolean
 	public boolean CheckFutrueweight(ImmutableSet<Move> availablemove,MutableValueGraph<Integer,Integer> safemap)
 	{
 		boolean exist = false;
@@ -136,7 +145,7 @@ public class MyAi implements Ai {
 			if (move instanceof Move.SingleMove) {
 				int target = destination1(move);
 				int weight = safemap.edgeValueOrDefault(mrXLocation, target, 99);
-				if (weight == 1)
+				if (weight == 0)
 				{
 					exist = true;
 					return exist;
@@ -146,7 +155,7 @@ public class MyAi implements Ai {
 				int secondTarget =destination(move);
 				int weightSecond = safemap.edgeValueOrDefault(firstTarget, secondTarget, 99);
 
-				if(weightSecond == 1 && firstTarget != secondTarget)
+				if(weightSecond == 0 && firstTarget != secondTarget)
 				{
 					exist = true;
 					return exist;
@@ -155,6 +164,15 @@ public class MyAi implements Ai {
 		}
 		return exist;
 	}
+
+	/*
+	* find the exist moves by following order:
+	* Single
+	* Double
+	* Secret
+	*
+	* return that Move (anyone)
+	*/
 	public Move ChoosePositionwhiledetectiveCannotReach(ImmutableSet<Move> availablemove,MutableValueGraph<Integer,Integer> safemap)
 	{
 		// this method is to found out is there any weight that detective can't reach in next 2 round
@@ -175,7 +193,7 @@ public class MyAi implements Ai {
 			if (move instanceof Move.SingleMove && !usedSecret) {
 				int target = destination1(move);
 				int weight = safemap.edgeValueOrDefault(mrXLocation, target, 99);
-				if (weight == 1)
+				if (weight == 0)
 				{
 					bestmove = move;
 					return bestmove;
@@ -184,7 +202,7 @@ public class MyAi implements Ai {
 				int firstTarget = destination1(move);
 				int secondTarget = destination(move);
 				int weightSecond = safemap.edgeValueOrDefault(firstTarget, secondTarget, 99);
-				if(weightSecond == 1 && firstTarget != secondTarget)
+				if(weightSecond == 0 && firstTarget != secondTarget)
 				{
 					bestmove = move;
 					return  bestmove;
@@ -193,7 +211,7 @@ public class MyAi implements Ai {
 			{
 				int target = destination1(move);
 				int weight = safemap.edgeValueOrDefault(mrXLocation, target, 99);
-				if (weight == 1)
+				if (weight == 0)
 				{
 					Secret.add(move);
 				}
@@ -202,7 +220,7 @@ public class MyAi implements Ai {
 				int firstTarget = destination1(move);
 				int secondTarget = destination(move);
 				int weightSecond = safemap.edgeValueOrDefault(firstTarget, secondTarget, 99);
-				if(weightSecond == 1 && firstTarget != secondTarget)
+				if(weightSecond == 0 && firstTarget != secondTarget)
 				{
 					Secret.add(move);
 				}
@@ -211,6 +229,11 @@ public class MyAi implements Ai {
 		bestmove = Secret.get(new Random().nextInt(Secret.size()));
 		return bestmove;
 	}
+
+	/*
+	* no 0, find best move (return Move)
+	* secret only use for ship
+	*/
 	public Move ChooseMoveWhileDetectiveNearBy(ImmutableSet<Move> availablemove,int [] dijkstra)
 	{
 		int count = 0;
@@ -396,7 +419,7 @@ public class MyAi implements Ai {
 		for (Integer node : gameMap.nodes()) {
 			valueGraph.addNode(node);
 			for (Integer neighbor : gameMap.adjacentNodes(node)) {
-				int weight = 1;
+				int weight = 0;
 				// initial weight is 1
 				valueGraph.putEdgeValue(node, neighbor, weight);
 			}
@@ -404,7 +427,7 @@ public class MyAi implements Ai {
 
 		return valueGraph;
 	}
-	public int [] updatedijsktra(MutableValueGraph<Integer, Integer> valueGraph)
+	public int [] updatedijkstra(MutableValueGraph<Integer, Integer> valueGraph)
 	{
 		int size = valueGraph.nodes().size();
 		int[] distance = new int[size + 1]; // the node is from 1
@@ -446,8 +469,8 @@ public class MyAi implements Ai {
 	}
 	public MutableValueGraph<Integer, Integer> updateMap(MutableValueGraph<Integer, Integer> valueGraph) {
 		// update the score nearby the detective in next 2 round
-		final int TAXI = 2;
-		final int BUS = 4;
+		final int TAXI = 3;
+		final int BUS = 5;
 		final int UNDERGROUND = 8;
 		for (Integer node : CurrentPosition)
 		{
